@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TRON Payment dApp</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/tronweb/dist/TronWeb.js"></script>
+  <script src="https://unpkg.com/@walletconnect/client@1.8.0/dist/umd/index.min.js"></script>
+  <script src="https://unpkg.com/qrcode/build/qrcode.min.js"></script>
+
+</head>
+
+<body style="font-family: Arial; text-align:center; margin-top:50px;">
+
+<h2>Pay 10 USDT</h2>
+
+<p><b>Receiver:</b> TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV</p>
+<p><b>Amount:</b> 10 USDT</p>
+
+<button onclick="init()">Connect Wallet</button><br><br>
+
+<button onclick="sendUSDT()">Send 10 USDT</button><br><br>
+
+<button onclick="approveUSDT()">Approve 100 USDT</button>
+
+<div id="qrcode"></div>
+
+<p id="status"></p>
+
+<script>
+let tronWeb;
+let connector;
+
+// TRON USDT contract
+const USDT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+const RECEIVER = "TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV";
+
+async function init() {
+
+  // ✅ TronLink mode
+  if (window.tronWeb && window.tronWeb.defaultAddress.base58) {
+    tronWeb = window.tronWeb;
+
+    document.getElementById("status").innerText =
+      "Connected via TronLink: " + tronWeb.defaultAddress.base58;
+
+    return;
+  }
+
+  // 🔁 WalletConnect fallback
+  connector = new WalletConnect.default({
+    bridge: "https://bridge.walletconnect.org",
+    qrcodeModal: null
+  });
+
+  if (!connector.connected) {
+    await connector.createSession();
+
+    const uri = connector.uri;
+
+    // generate QR
+    QRCode.toCanvas(document.getElementById("qrcode"), uri);
+
+    document.getElementById("status").innerText =
+      "Scan QR with Trust Wallet";
+  }
+
+  connector.on("connect", (error, payload) => {
+    if (error) throw error;
+
+    const { accounts } = payload.params[0];
+
+    document.getElementById("status").innerText =
+      "Connected: " + accounts[0];
+  });
+}
+
+async function sendUSDT() {
+
+  // TronLink flow
+  if (tronWeb) {
+    const contract = await tronWeb.contract().at(USDT);
+    const tx = await contract.transfer(RECEIVER, 10 * 1e6).send();
+
+    document.getElementById("status").innerText = "TX: " + tx;
+    return;
+  }
+
+  // WalletConnect fallback
+  if (connector) {
+    alert("⚠️ TRON via WalletConnect is limited.\nUse TronLink for full support.");
+  }
+}
+
+async function approveUSDT() {
+
+  if (tronWeb) {
+    const contract = await tronWeb.contract().at(USDT);
+    const tx = await contract.approve(RECEIVER, 100 * 1e6).send();
+
+    document.getElementById("status").innerText = "Approval: " + tx;
+    return;
+  }
+
+  if (connector) {
+    alert("⚠️ Approval not supported via WalletConnect TRON");
+  }
+}
+</script>
+
+</body>
+</html>
